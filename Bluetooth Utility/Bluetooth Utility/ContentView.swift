@@ -121,7 +121,7 @@ struct MainView: View {
             .refreshable {
                 networkManager.stopBluetoothScan() // Stop any existing scan
                 networkManager.discoveredDevices.removeAll() // Clear discovered devices
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { // Add delay to load content after refresh animation
                     networkManager.startBluetoothScan()
                 }
             }
@@ -445,8 +445,7 @@ struct DetailView: View {
                     // Only show if .connected or .disconnected
                     if device.status == .connected || device.status == .disconnected {
                         // Show 'Disconnect' if .connected, 'Connect' if .disconnected
-                        Text(device.status == .connected ? "Disconnect" : "Connect")
-                            .foregroundColor(device.status == .connected ? .red : .green)
+                        Text(device.status == .connected ? "Disconnect" : "Connect").foregroundColor(device.status == .connected ? .red : .green)
                     }
                 }
             }

@@ -117,12 +117,34 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
         """)
     }
     
+    // Retrieve Connected Devices
+    func retrieveConnectedDevices() {
+        // Retrieve all Devices from connectedDevices array and append to Discovrered Devices
+        for device in connectedDevices {
+            if !discoveredDevices.contains(where: { $0.id == device.id }) {
+                discoveredDevices.append(device) // Add to discoveredDevices
+            }
+        }
+        // Retrieve all Devices not in connectedDevices but connected to central
+        let connectedPeripherals = centralManager.retrieveConnectedPeripherals(withServices: [])
+        print("connectedPeripherals",connectedPeripherals.count)
+        for peripheral in connectedPeripherals {
+            log("peripheral.name: \(peripheral.name)")
+            log(" ")
+            let device = BluetoothDevice(peripheral: peripheral, advertisementData:  [:], rssi: 0)
+            if !discoveredDevices.contains(where: { $0.id == device.id }) {
+                discoveredDevices.append(device) // Add to discoveredDevices
+            }
+        }
+    }
+    
     // Start Bluetooth Scan
     func startBluetoothScan() {
         guard centralManager.state == .poweredOn else { return }
         log("""
         Starting Bluetooth scan...
         """)
+        retrieveConnectedDevices()
         centralManager.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
 
@@ -190,6 +212,7 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     
     // Connect to Device
     func connectToDevice(_ device: BluetoothDevice) {
+        cancelConnectingDevice(device) // Cancel pending connection
         if let index = discoveredDevices.firstIndex(where: { $0.id == device.id }) {
             log("""
             Connecting:
@@ -226,8 +249,8 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
             DispatchQueue.main.async {
                 let peripheral = self.connectedDevices[index].peripheral
                 if self.selectedDevice == self.connectedDevices[index] {
+                    // Stop polling if selected device is being disconnected
                     self.stopCharacteristicPolling()
-                    self.selectedDevice = nil
                 }
                 // Remove from connectedDevices
                 self.connectedDevices.remove(at: index)
