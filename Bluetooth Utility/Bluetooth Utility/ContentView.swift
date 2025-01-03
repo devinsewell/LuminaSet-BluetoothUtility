@@ -11,23 +11,46 @@ struct ContentView: View {
 
     var body: some View {
         // Use NavigationSplitView for iPad, NavigationStack for iPhone
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            MainView() // Main/Sidebar with MainView content
-        } detail: {
-            if let selectedDevice = networkManager.selectedDevice {
-                DetailView(device: Binding(
-                    get: { selectedDevice },
-                    set: { newValue in
-                        networkManager.selectedDevice = newValue
+        Group {
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                // iPad: Use NavigationSplitView
+                NavigationSplitView(columnVisibility: $columnVisibility.animation()) {
+                    MainView()
+                } detail: {
+                    if let selectedDevice = networkManager.selectedDevice {
+                        DetailView(device: Binding(
+                            get: { selectedDevice },
+                            set: { newValue in
+                                networkManager.selectedDevice = newValue
+                            }
+                        ))
+                    } else {
+                        VStack {}
+                            .navigationBarHidden(columnVisibility != .detailOnly)
+                            .navigationTitle("Bluetooth Utility")
                     }
-                ))
-            }else {
-                VStack {} // Used to hide navigation bar to display Console Log fullscreen
-                .navigationBarHidden(columnVisibility != .detailOnly)
+                    ConsoleLogView(logs: $networkManager.consoleLogs)
+                }
+                .navigationSplitViewStyle(.balanced)
+            } else {
+                // iPhone: Use NavigationStack
+                NavigationStack {
+                    if let selectedDevice = networkManager.selectedDevice {
+                        DetailView(device: Binding(
+                            get: { selectedDevice },
+                            set: { newValue in
+                                networkManager.selectedDevice = newValue
+                            }
+                        ))
+                        
+                        ConsoleLogView(logs: $networkManager.consoleLogs)
+                    } else {
+                        MainView()
+                    }
+                    
+                }
             }
-            ConsoleLogView(logs: $networkManager.consoleLogs)
         }
-        .navigationSplitViewStyle(.balanced)
     }
 }
 
@@ -45,9 +68,9 @@ struct MainView: View {
         case near = "Near Proximity"
         case far = "Far Proximity"
     }
-    
+    // Filter Discovered Devices by RSSI and 'Unknown' Devices
     var filteredDevices: [BluetoothDevice] {
-        networkManager.discoveredDevices.filter { device in
+        return networkManager.discoveredDevices.filter { device in
             // Apply "Show All" / "Hide Unknown" filter
             guard showAllDevices || (device.name != "Unknown Device") else { return false }
             switch selectedDistanceFilter { // Apply distance filter
@@ -65,8 +88,10 @@ struct MainView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading) { // Top Section with Header and Connect All Button
-                Text("\(filteredDevices.count) Devices \nNearby")
+            // Nearby Devices Header
+            VStack(alignment: .leading) {
+                // Pluralize 'Device' for multiple devices discovered
+                Text("\(filteredDevices.count) Device\(filteredDevices.count == 1 ? "" : "s") \nNearby")
                     .font(.largeTitle)
                     .bold()
                 if selectedDistanceFilter != .all || !showAllDevices{
@@ -274,6 +299,9 @@ struct DiscoveredDeviceTile: View {
                         networkManager.cancelConnectingDevice(device)
                     case .disconnected:
                         networkManager.connectToDevice(device)
+                        if networkManager.selectedDevice == nil {
+                            networkManager.selectedDevice = device
+                        }
                     default:
                         networkManager.selectedDevice = device
                     }
@@ -368,7 +396,7 @@ struct DetailView: View {
                         deviceStat(icon: "wifi", label: "RSSI", value: "\(device.rssi)dB")
                     }
                     HStack {
-                        deviceStat(label: "Services", value: "\(device.peripheral.services?.count ?? 0)")
+                        deviceStat(label: "Services", value: "\(device.peripheral?.services?.count ?? 0)")
                         deviceStat(label: "Characteristics", value: "\(networkManager.totalCharacteristicsCount(for: device))")
                     }
                     .padding(.top)
@@ -381,33 +409,35 @@ struct DetailView: View {
                 Divider()
                 
                 // DetailView --> GATT Services and Characteristics
-                if let services = device.peripheral.services {
-                    ForEach(services, id: \.uuid) { service in
-                        VStack(alignment: .leading, spacing: 10) {
-                            let serviceName = gattServiceNames[service.uuid.uuidString.prefix(4).uppercased()] ?? "Service"
-                            HStack {
-                                Text("\(serviceName)").font(.title2).bold()
-                                Spacer()
-                            }
-                            Text("UUID: \(service.uuid.uuidString)").font(.subheadline).bold()
-                            
-                            if let characteristics = service.characteristics {
-                                if serviceName == "Device Information" {
-                                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                if let peripheral = device.peripheral {
+                    if let services = device.peripheral?.services {
+                        ForEach(services, id: \.uuid) { service in
+                            VStack(alignment: .leading, spacing: 10) {
+                                let serviceName = gattServiceNames[service.uuid.uuidString.prefix(4).uppercased()] ?? "Service"
+                                HStack {
+                                    Text("\(serviceName)").font(.title2).bold()
+                                    Spacer()
+                                }
+                                Text("UUID: \(service.uuid.uuidString)").font(.subheadline).bold()
+                                
+                                if let characteristics = service.characteristics {
+                                    if serviceName == "Device Information" {
+                                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                                            ForEach(characteristics, id: \.uuid) { characteristic in
+                                                characteristicView(characteristic: characteristic, peripheral: peripheral)
+                                            }
+                                        }
+                                    } else {
                                         ForEach(characteristics, id: \.uuid) { characteristic in
-                                            characteristicView(characteristic: characteristic, peripheral: device.peripheral)
+                                            characteristicView(characteristic: characteristic, peripheral: peripheral)
                                         }
                                     }
                                 } else {
-                                    ForEach(characteristics, id: \.uuid) { characteristic in
-                                        characteristicView(characteristic: characteristic, peripheral: device.peripheral)
-                                    }
+                                    Text("No Characteristics").font(.body).foregroundColor(.secondary)
                                 }
-                            } else {
-                                Text("No Characteristics").font(.body).foregroundColor(.secondary)
                             }
+                            .padding(.vertical, 10)
                         }
-                        .padding(.vertical, 10)
                     }
                 } else {
                     if device.status != .connected {
@@ -461,7 +491,7 @@ struct DetailView: View {
             Alert(
                 title: Text(alertTitle),
                 message: Text(alertMessage),
-                primaryButton: .destructive(Text("Yes")) {
+                primaryButton: .default(Text("Yes")) {
                     confirmAction?()
                 },
                 secondaryButton: .cancel()
@@ -596,6 +626,12 @@ struct DetailView: View {
                                 }
                             }
                         ))
+                        .onAppear {
+                            // Set default mode to .hex if not already set
+                            if inputModes[characteristic.uuid] == nil {
+                                inputModes[characteristic.uuid] = .hex
+                            }
+                        }
                         .onChange(of: networkManager.textInputs[characteristic.uuid] ?? "") { previousInput, currentInput in
                             guard inputModes[characteristic.uuid] == .hex else { return }
                             let sanitizedInput = currentInput.replacingOccurrences(of: " ", with: "") // Remove spaces
@@ -690,15 +726,10 @@ struct DetailView: View {
     private func deviceStat(icon: String? = nil, label: String, value: String) -> some View {
         VStack {
             if let icon = icon {
-                Image(systemName: icon)
-                    .foregroundColor(.blue)
+                Image(systemName: icon).foregroundColor(.blue)
             }
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Text(value)
-                .font(.subheadline)
-                .bold()
+            Text(label).font(.caption).foregroundColor(.secondary)
+            Text(value).font(.subheadline).bold()
         }
         .frame(maxWidth: .infinity, alignment: .center) // Center align horizontally
     }

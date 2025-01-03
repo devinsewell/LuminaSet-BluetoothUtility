@@ -18,6 +18,7 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     private var rssiTimer: Timer? // RSSI Polling Timer
     private var descriptorValues: [String: String] = [:] // Store Descriptor Values to avoid duplicate reads
     private var discoveredDescriptors = Set<String>()  // Store Discovered Descriptor Values to avoid duplicate reads
+    @Published var bluetoothState: CBManagerState = .unknown
     private var centralManager: CBCentralManager! // CoreBluetooth Central
     private var peripherals: [UUID: CBPeripheral] = [:] // CoreBluetooth peripherals array
     private let characteristicWriteHistoryKey = "CharacteristicHistory" // Key to store write history in NSUserDefaults
@@ -60,7 +61,7 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
         rssiTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             for device in self.connectedDevices {
-                device.peripheral.readRSSI()
+                device.peripheral?.readRSSI()
             }
         }
         log("""
@@ -102,18 +103,19 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     // Poll Characteristic Updates for selectedDevice
     func pollCharacteristics() {
         for device in connectedDevices {
-            guard let services = device.peripheral.services else { continue }
+            guard let services = device.peripheral?.services else { continue }
             for service in services {
                 guard let characteristics = service.characteristics else { continue }
                 for characteristic in characteristics {
                     if characteristic.properties.contains(.read) && selectedDevice?.peripheral == device.peripheral{
-                        device.peripheral.readValue(for: characteristic)
+                        device.peripheral?.readValue(for: characteristic)
                     }
                 }
             }
         }
         log("""
-        Polled all [\(selectedDevice?.name ?? "Unknown Device")] characteristics.
+        Finished attempting to poll:
+        [\(selectedDevice?.name ?? "Unknown Device")] characteristics.
         """)
     }
     
@@ -127,14 +129,11 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
         }
         // Retrieve all Devices not in connectedDevices but connected to central
         let connectedPeripherals = centralManager.retrieveConnectedPeripherals(withServices: [])
-        print("connectedPeripherals",connectedPeripherals.count)
         for peripheral in connectedPeripherals {
-            log("peripheral.name: \(peripheral.name)")
+            log("peripheral.name: \(String(describing: peripheral.name))")
             log(" ")
             let device = BluetoothDevice(peripheral: peripheral, advertisementData:  [:], rssi: 0)
-            if !discoveredDevices.contains(where: { $0.id == device.id }) {
-                discoveredDevices.append(device) // Add to discoveredDevices
-            }
+            connectToDevice(device)
         }
     }
     
@@ -170,7 +169,8 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     // Console Log -> Add Console Log Item
     func log(_ message: String) {
         logUpdateQueue.async {
-            pendingLogs.append(message)
+            let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+            pendingLogs.append("[\(timestamp)]\n--------------------------------------\n\(message)")
             if pendingLogs.count == 1 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + logBatchInterval) {
                     self.flushPendingLogs()
@@ -212,7 +212,9 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     
     // Connect to Device
     func connectToDevice(_ device: BluetoothDevice) {
-        cancelConnectingDevice(device) // Cancel pending connection
+        if device.status == .connecting {
+            cancelConnectingDevice(device) // Cancel any pending connection
+        }
         if let index = discoveredDevices.firstIndex(where: { $0.id == device.id }) {
             log("""
             Connecting:
@@ -220,22 +222,25 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
             """)
             discoveredDevices[index].status = .connecting
             updateDeviceField(device.peripheral, keyPath: \.status, value: .connecting)
-            let peripheral = device.peripheral
-            reconnectionAttempts[device.id] = 0 // Reset reconnection attempts
-            DispatchQueue.main.async {
-                if self.selectedDevice == nil {
-                    self.selectedDevice = device
+            if let peripheral = device.peripheral {
+                // Real device connection
+                reconnectionAttempts[device.id] = 0 // Reset reconnection attempts
+                DispatchQueue.main.async {
+                    if self.selectedDevice == nil {
+                        self.selectedDevice = device
+                    }
                 }
+                centralManager.connect(peripheral, options: nil)
             }
-            centralManager.connect(peripheral, options: nil)
         }
     }
     
     // Cancel Pending Peripheral Connection
     func cancelConnectingDevice(_ device: BluetoothDevice) {
         if let index = discoveredDevices.firstIndex(where: { $0.id == device.id }) {
-            let peripheral = discoveredDevices[index].peripheral
-            centralManager.cancelPeripheralConnection(peripheral)
+            if let peripheral = discoveredDevices[index].peripheral{
+                centralManager.cancelPeripheralConnection(peripheral)
+            }
             discoveredDevices[index].status = .disconnected
             log("""
             Cancelled connecting: \(device.name)
@@ -247,18 +252,19 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     func disconnectDevice(_ device: BluetoothDevice) {
         if let index = connectedDevices.firstIndex(where: { $0.id == device.id }) {
             DispatchQueue.main.async {
-                let peripheral = self.connectedDevices[index].peripheral
-                if self.selectedDevice == self.connectedDevices[index] {
-                    // Stop polling if selected device is being disconnected
-                    self.stopCharacteristicPolling()
-                }
-                // Remove from connectedDevices
-                self.connectedDevices.remove(at: index)
-                self.centralManager.cancelPeripheralConnection(peripheral) // Request disconnection
-
-                // Synchronize status with discoveredDevices
-                if let discoveredIndex = self.discoveredDevices.firstIndex(where: { $0.id == device.id }) {
-                    self.discoveredDevices[discoveredIndex].status = .disconnected
+                if let peripheral = self.connectedDevices[index].peripheral {
+                    if self.selectedDevice == self.connectedDevices[index] {
+                        // Stop polling if selected device is being disconnected
+                        self.stopCharacteristicPolling()
+                    }
+                    // Remove from connectedDevices
+                    self.connectedDevices.remove(at: index)
+                    self.centralManager.cancelPeripheralConnection(peripheral) // Request disconnection
+                    
+                    // Synchronize status with discoveredDevices
+                    if let discoveredIndex = self.discoveredDevices.firstIndex(where: { $0.id == device.id }) {
+                        self.discoveredDevices[discoveredIndex].status = .disconnected
+                    }
                 }
             }
             log("""
@@ -507,7 +513,6 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
             }
         } else {
             log("""
-            ----------------------------------------
             Disconnected:
             [\(peripheral.name ?? "Unknown Device")]
             """)
@@ -521,7 +526,6 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
             peripheral.discoverCharacteristics(nil, for: service) // Discover all characteristics for the service
         }
         log("""
-        ----------------------------------------
         Discovered Services:
         [\(peripheral.name ?? "Unknown Device")]
         Discovered \(services.count) services
@@ -545,14 +549,12 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
             return
         }
         log("""
-        ----------------------------------------
         Discovered Characteristics for Services:
         [\(service.uuid)]
         \(peripheral.name ?? "Unknown Device")
         """)
         for characteristic in characteristics {
             log("""
-            ----------------------------------------
             \(peripheral.name ?? "Unknown Device")
             Read Characteristic:
             [\(characteristic.uuid)]
@@ -584,30 +586,31 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     // MARK: - CoreBluetooth -> Write Data to Peripheral(s)
     func writeDataToBLE(characteristic: CBCharacteristic, data: Data, devices: [BluetoothDevice]) {
         for device in devices {
-            device.peripheral.writeValue(data, for: characteristic, type: .withResponse)
-            
-            // Format the sent data as a readable hex string
-            let dataBytes = data.map { String(format: "%02X", $0) }.joined(separator: " ")
-            
-            // Store the value in the recent list (limit to 10)
-            let characteristicUUID = characteristic.uuid
-            if sentValues[characteristicUUID] == nil {
-                sentValues[characteristicUUID] = []
+            if let peripheral = device.peripheral {
+                peripheral.writeValue(data, for: characteristic, type: .withResponse)
+                
+                // Format the sent data as a readable hex string
+                let dataBytes = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+                
+                // Store the value in the recent list (limit to 10)
+                let characteristicUUID = characteristic.uuid
+                if sentValues[characteristicUUID] == nil {
+                    sentValues[characteristicUUID] = []
+                }
+                sentValues[characteristicUUID]?.append(dataBytes)
+                if let count = sentValues[characteristicUUID]?.count, count > 10 {
+                    sentValues[characteristicUUID]?.removeFirst(count - 10) // Limit to 10 values
+                }
+                
+                // Log the Write action
+                log("""
+                Writing data to:
+                \(device.name)
+                [Characteristic: \(characteristicUUID)]
+                Value:
+                \(data.map { String(format: "%02X", $0) }.joined(separator: " "))
+                """)
             }
-            sentValues[characteristicUUID]?.append(dataBytes)
-            if let count = sentValues[characteristicUUID]?.count, count > 10 {
-                sentValues[characteristicUUID]?.removeFirst(count - 10) // Limit to 10 values
-            }
-            
-            // Log the Write action
-            log("""
-            ----------------------------------------
-            Writing data to:
-            \(device.name)
-            [Characteristic: \(characteristicUUID)]
-            Value:
-            \(data.map { String(format: "%02X", $0) }.joined(separator: " "))
-            """)
         }
         saveWriteHistory() // Add the data to history for the characteristic
     }

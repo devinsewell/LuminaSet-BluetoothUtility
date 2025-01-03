@@ -7,7 +7,7 @@ import CoreBluetooth
 // Extension for NetworkManager
 extension NetworkManager {
     func totalCharacteristicsCount(for device: BluetoothDevice) -> Int {
-        guard let services = device.peripheral.services else { return 0 }
+        guard let services = device.peripheral?.services else { return 0 }
         return services.flatMap { $0.characteristics ?? [] }.count
     }
     /// Updates a field on a `BluetoothDevice` object and notifies the UI.
@@ -15,7 +15,8 @@ extension NetworkManager {
     ///   - peripheral: The peripheral associated with the device to update.
     ///   - keyPath: The keyPath of the property to update.
     ///   - value: The new value to assign to the property.
-    func updateDeviceField<T>(_ peripheral: CBPeripheral, keyPath: WritableKeyPath<BluetoothDevice, T>, value: T) {
+    func updateDeviceField<T>(_ peripheral: CBPeripheral?, keyPath: WritableKeyPath<BluetoothDevice, T>, value: T) {
+        guard let peripheral = peripheral else { return }
         if let index = connectedDevices.firstIndex(where: { $0.peripheral == peripheral }) {
             DispatchQueue.main.async {
                 self.connectedDevices[index][keyPath: keyPath] = value
@@ -31,7 +32,7 @@ extension NetworkManager {
 // Extension for BluetoothDevice
 extension BluetoothDevice {
     func hasBatteryLevelCharacteristic() -> Bool {
-        guard let services = peripheral.services else { return false }
+        guard let services = peripheral?.services else { return false }
         for service in services {
             if let characteristics = service.characteristics {
                 if characteristics.contains(where: { $0.uuid == CBUUID(string: "2A19") }) {

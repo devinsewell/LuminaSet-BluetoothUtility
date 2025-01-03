@@ -4,7 +4,7 @@ import SwiftUI
 
 // MARK: - Console Log
 
-let logMessageLimit = 1000 // Limit maximum console logs
+let logMessageLimit = 200_000 // Limit maximum console logs
 let logUpdateQueue = DispatchQueue(label: "logUpdateQueue", qos: .userInitiated)
 let logBatchInterval: TimeInterval = 0.5 // Throttle Console Log propegation
 var pendingLogs: [String] = [] // Buffer to store pending Console Logs
@@ -23,13 +23,48 @@ struct ConsoleLogView: View {
     @State private var isConsoleExpanded = true
     @State private var autoScrollEnabled = true
     
+    @State private var isAlertPresented: Bool = false // Alert visibile bool
+    @State private var alertTitle: String = "" // Alert Title
+    @State private var alertMessage: String = "" // Alert Message
+    @State private var confirmAction: (() -> Void)? = nil // Alert Confirm Action
+    
     var body: some View {
         VStack(spacing: 0) {
+            // Console Log header
             consoleLogHeaderView
-            
-            // Show log view if expanded or no Device selected
+            // Show Console Log if is expanded or if no Device is selected
             if isConsoleExpanded || networkManager.selectedDevice == nil {
-                logScrollView
+                // Console Log ScrollView
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(logs.indices, id: \.self) { index in
+                                formatLog(logs[index]).padding(.horizontal).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.top, 10)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .onAppear {
+                            scrollToLast(proxy)
+                        }
+                        .onChange(of: logs) { _, _ in
+                            if autoScrollEnabled && isConsoleExpanded {
+                                withAnimation { scrollToLast(proxy) }
+                            }
+                        }
+                    }
+                    .alert(isPresented: $isAlertPresented) {
+                        Alert( // Used to confirm clear console log
+                            title: Text(alertTitle),
+                            message: Text(alertMessage),
+                            primaryButton: .default(Text("Yes")) {
+                                confirmAction?()
+                            },
+                            secondaryButton: .cancel()
+                        )
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
         }
         .background(Color.gray.opacity(0.2))
@@ -43,14 +78,42 @@ struct ConsoleLogView: View {
             HStack {
                 Image(systemName: "text.justifyleft")
                 Text("Console Log").font(.headline)
-                Spacer()
+                
                 if isConsoleExpanded || networkManager.selectedDevice == nil {
+                    // Share Button
+                    Button(action: shareLogs) {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundColor(.green)
+                    }
+                    Spacer()
+                    Button(action: { // Clear Console Log button
+                        showAlert(
+                            title: "Clear Console Log ",
+                            message: "Are you sure you want to erase the console log?",
+                            confirmAction: {
+                                networkManager.consoleLogs = []
+                            }
+                        )
+                    }) {
+                        Image(systemName: "trash").foregroundColor(.red)
+                    }
+                    .padding(.leading, 8)
+                    Text("Autoscroll").foregroundColor(Color(UIColor.tertiaryLabel))
                     Toggle("AutoScroll", isOn: $autoScrollEnabled)
                         .toggleStyle(SwitchToggleStyle(tint: .orange))
                         .labelsHidden()
+                }else{
+                    Spacer()
                 }
-                if networkManager.selectedDevice != nil {
-                    toggleExpandButton
+                // Only show Expand/Collapse button if selectedDevice is nil
+                if networkManager.selectedDevice != nil{
+                    Image(systemName: isConsoleExpanded ? "minus.circle" : "plus.circle")
+                        .font(.title2)
+                        .foregroundColor(.orange)
+                        .padding(.leading, 8)
+                        .onTapGesture {
+                            withAnimation { isConsoleExpanded.toggle() }
+                        }
                 }
             }
             .padding()
@@ -59,39 +122,49 @@ struct ConsoleLogView: View {
         }
     }
     
-    // Expand / Collapse Console Log
-    private var toggleExpandButton: some View {
-        Image(systemName: isConsoleExpanded ? "minus.circle" : "plus.circle")
-            .font(.title2)
-            .foregroundColor(.orange)
-            .padding(.leading, 8)
-            .onTapGesture {
-                withAnimation { isConsoleExpanded.toggle() }
+    // Export and Share Console Log
+    private func shareLogs() {
+        guard !networkManager.consoleLogs.isEmpty else {
+            print("No logs available to share.")
+            return
+        }
+
+        // Combine logs into a single string
+        let logsText = "LuminaSet -> Console Log Output:\n ------------------------------- \n\n" + networkManager.consoleLogs.joined(separator: "\n\n")
+        // Add date and time to the filename
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd_HHmmss" // Example: 20240102_142530
+        let timestamp = dateFormatter.string(from: Date())
+        let tempFileURL = FileManager.default.temporaryDirectory.appendingPathComponent("LuminaSetBLE_\(timestamp).txt")
+
+        do {
+            // Write logs to a temporary file
+            try logsText.write(to: tempFileURL, atomically: true, encoding: .utf8)
+            
+            // Create and configure the share sheet
+            let activityVC = UIActivityViewController(activityItems: [tempFileURL], applicationActivities: nil)
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = scene.keyWindow?.rootViewController {
+                // Ensure iPad compatibility with popover
+                if let popoverController = activityVC.popoverPresentationController {
+                    popoverController.sourceView = rootVC.view
+                    popoverController.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0
+                    )
+                    popoverController.permittedArrowDirections = []
+                }
+                rootVC.present(activityVC, animated: true)
             }
+        } catch {
+            print("Error writing logs: \(error.localizedDescription)")
+        }
     }
     
-    // Console Log ScrollView
-    private var logScrollView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(logs.indices, id: \.self) { index in
-                        formatLog(logs[index]).padding(.horizontal).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(.top, 10)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .onAppear {
-                    scrollToLast(proxy)
-                }
-                .onChange(of: logs) { _, _ in
-                    if autoScrollEnabled && isConsoleExpanded {
-                        withAnimation { scrollToLast(proxy) }
-                    }
-                }
-            }
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
+    // Alert (Clear Console Log)
+    func showAlert(title: String, message: String, confirmAction: @escaping () -> Void) {
+        self.alertTitle = title
+        self.alertMessage = message
+        self.confirmAction = confirmAction
+        self.isAlertPresented = true
     }
     
     // Scroll to latest Console Log Item if autoScrollEnabled == true
@@ -144,6 +217,7 @@ struct ConsoleLogView: View {
             ("\\{.*?\\}", .cyan),                   // Matches content in curly braces {}
             ("\\<.*?\\>", .red),                    // Matches content in angle brackets <>
             ("^[-]+$", .orange),                    // Matches standalone lines of "-"
+            ("^[_]+$", .cyan),                    // Matches standalone lines of "_"
             ("Disconnected:", .red),               // Matches "Disconnected:"
             ("Max reconnection attempts reached:", .orange),
             ("Connected:", .green),

@@ -27,6 +27,8 @@
 		DFF106232D26F951005C8011 /* BluetoothDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothDevice.swift; sourceTree = "<group>"; };
 		DFF106252D26F95C005C8011 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		DFF106272D26FB25005C8011 /* ConsoleLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleLogView.swift; sourceTree = "<group>"; };
+		DFF1062B2D27A857005C8011 /* Bluetooth-Utility-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Bluetooth-Utility-Info.plist"; sourceTree = SOURCE_ROOT; };
+		DFF1062C2D27A919005C8011 /* Bluetooth Utility.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Bluetooth Utility.entitlements"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -59,8 +61,10 @@
 		DFBF0AEE2D2084E600B7DDA5 /* Bluetooth Utility */ = {
 			isa = PBXGroup;
 			children = (
+				DFF1062B2D27A857005C8011 /* Bluetooth-Utility-Info.plist */,
 				DFBF0AEF2D2084E600B7DDA5 /* BluetoothUtilityApp.swift */,
 				DFBF0B052D208F8C00B7DDA5 /* ContentView.swift */,
+				DFF1062C2D27A919005C8011 /* Bluetooth Utility.entitlements */,
 				DFF106212D26F93D005C8011 /* NetworkManager.swift */,
 				DFF106232D26F951005C8011 /* BluetoothDevice.swift */,
 				DFF106252D26F95C005C8011 /* Extensions.swift */,
@@ -286,11 +290,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_ASSET_PATHS = "\"Bluetooth Utility/Preview Content\"";
 				DEVELOPMENT_TEAM = V3S8SGT4VX;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Bluetooth-Utility-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Bluetooth Utility";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "LuminaSet Bluetooth Utility Requires Bluetooth";
@@ -319,11 +324,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_ASSET_PATHS = "\"Bluetooth Utility/Preview Content\"";
 				DEVELOPMENT_TEAM = V3S8SGT4VX;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Bluetooth-Utility-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Bluetooth Utility";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "LuminaSet Bluetooth Utility Requires Bluetooth";

@@ -31,7 +31,7 @@ enum ConnectionStatus {
 
 // MARK: - BluetoothDevice
 class BluetoothDevice: ObservableObject, Identifiable, Equatable {
-    let peripheral: CBPeripheral
+    let peripheral: CBPeripheral?
     let advertisementData: [String: Any]
     @Published var rssi: NSNumber
     @Published var status: ConnectionStatus
@@ -39,17 +39,25 @@ class BluetoothDevice: ObservableObject, Identifiable, Equatable {
 
     // Computed property for Identifiable protocol
     var id: UUID {
-        return peripheral.identifier
+        return peripheral?.identifier ?? UUID(uuidString: "00000000-DDDD-EEEE-3333-000000000000")!
     }
 
     // Initializer
-    init(peripheral: CBPeripheral, advertisementData: [String: Any], rssi: NSNumber, status: ConnectionStatus = .disconnected) {
+    init(peripheral: CBPeripheral? = nil, advertisementData: [String: Any], rssi: NSNumber, status: ConnectionStatus = .disconnected) {
         self.peripheral = peripheral
         self.advertisementData = advertisementData
         self.rssi = rssi
         self.status = status
         self.batteryLevel = nil // Initialize as nil
     }
+    
+    // Default device instance
+    static let defaultDevice = BluetoothDevice(
+        peripheral: nil,
+        advertisementData: ["CBAdvertisementDataLocalNameKey": "LuminaSet Demo"],
+        rssi: 0,
+        status: .connected
+    )
 
     // Equatable protocol
     static func == (lhs: BluetoothDevice, rhs: BluetoothDevice) -> Bool {
@@ -58,7 +66,7 @@ class BluetoothDevice: ObservableObject, Identifiable, Equatable {
     
     // Device name with fallback to "Unknown Device"
     var name: String {
-        peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? "Unknown Device"
+        peripheral?.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? "Unknown Device"
     }
     
     // Extract model name from advertisement data
