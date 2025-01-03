@@ -70,6 +70,7 @@ struct MainView: View {
     }
     // Filter Discovered Devices by RSSI and 'Unknown' Devices
     var filteredDevices: [BluetoothDevice] {
+        networkManager.synchronizeDeviceStatus()
         return networkManager.discoveredDevices.filter { device in
             // Apply "Show All" / "Hide Unknown" filter
             guard showAllDevices || (device.name != "Unknown Device") else { return false }
@@ -182,6 +183,7 @@ struct MainView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
+                //ToolbarItem(placement: UIDevice.current.userInterfaceIdiom == .pad ? .principal : .navigationBarLeading) {
                 Image("LSLogo") // LuminaSet Logo
                     .resizable()
                     .renderingMode(.template)
@@ -261,9 +263,7 @@ struct ConnectedDeviceCell: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .onTapGesture {
-            if device.status == .disconnected {
-                networkManager.connectToDevice(device)
-            }
+            // Set selectedDevice on Connected Device List cell tap
             networkManager.selectedDevice = device
         }
     }
@@ -501,16 +501,12 @@ struct DetailView: View {
     
     // Poll selected device Characteristics at interval
     private func handleLiveUpdates(enabled: Bool) {
-        if enabled {
-            guard let interval = Double(pollingInterval), interval > 0 else {
-                networkManager.startCharacteristicPolling(interval: 5.0) // Fallback to default interval if input is invalid
-                return
-            }
-            networkManager.pollCharacteristics()
-            networkManager.startCharacteristicPolling(interval: interval)
-        } else {
-            networkManager.stopCharacteristicPolling()
+        guard enabled, let interval = Double(pollingInterval), interval > 0 else {
+            enabled ? networkManager.startCharacteristicPolling(interval: 5.0) : networkManager.stopCharacteristicPolling()
+            return
         }
+        networkManager.pollCharacteristics()
+        networkManager.startCharacteristicPolling(interval: interval)
     }
     
     // Handle formatting Characteristic control input

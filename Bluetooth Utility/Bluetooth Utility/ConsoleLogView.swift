@@ -218,7 +218,7 @@ struct ConsoleLogView: View {
             ("\\<.*?\\>", .red),                    // Matches content in angle brackets <>
             ("^[-]+$", .orange),                    // Matches standalone lines of "-"
             ("^[_]+$", .cyan),                    // Matches standalone lines of "_"
-            ("Disconnected:", .red),               // Matches "Disconnected:"
+            ("Device Disconnected:", .red),               // Matches "Disconnected:"
             ("Max reconnection attempts reached:", .orange),
             ("Connected:", .green),
             ("Bluetooth is powered on.", .cyan),
@@ -241,6 +241,7 @@ struct ConsoleLogView: View {
             ("Error Writing to Device:", .red),
             ("Writing data to:", .blue),
             ("Successfully Wrote to Characteristic:", .green),
+            ("Finished reading characteristics for:", .blue),
             ("Value:", .orange),
             ("Properties:", .cyan),
             ("Discovered Characteristics for Services:", .green),
