@@ -5,8 +5,8 @@ import CoreBluetooth
 // MARK: - NetworkManager
 class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let shared = NetworkManager()
-    @Published var bluetoothScanning: Bool = true
-    @Published var liveUpdatesEnabled: Bool = true
+    @Published var bluetoothScanning: Bool = true // is actively scanning nearby bluetooth devices
+    @Published var liveUpdatesEnabled: Bool = true // is polling Selected Device Characteristics at interval
     @Published var consoleLogs: [String] = [] // Console output for logs
     @Published var selectedDevice: BluetoothDevice? // Tracks the selected device
     @Published var discoveredDevices: [BluetoothDevice] = []
@@ -27,14 +27,12 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: DispatchQueue.main)
-        loadWriteHistory() // Load write history from UserDefaults
     }
     
     // Load Characteristic Write History
-    func loadWriteHistory() {
-        if let savedData = UserDefaults.standard.dictionary(forKey: characteristicWriteHistoryKey) as? [String: [String]] {
-            sentValues = savedData.reduce(into: [:]) { $0[CBUUID(string: $1.key)] = $1.value }
-        }
+    func loadCharacteristicWriteHistory() {
+        sentValues = (UserDefaults.standard.dictionary(forKey: characteristicWriteHistoryKey) as? [String: [String]] ?? [:])
+            .reduce(into: [:]) { $0[CBUUID(string: $1.key)] = $1.value }
     }
 
     // Save Characteristic Write History
@@ -57,7 +55,7 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
         rssiTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.connectedDevices.forEach { $0.peripheral?.readRSSI() }
         }
-        log("Started [RSSI updates] at \(interval)-second intervals.")
+        log("Started [RSSI updates]at \(interval)-second intervals.")
     }
 
     // Stop RSSI Updates
@@ -65,14 +63,14 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
         if rssiTimer != nil{
             rssiTimer?.invalidate()
             rssiTimer = nil
-            log("Stopped [RSSI updates].")
+            log("Stopped [RSSI updates]")
         }
     }
     
     // Start Polling Characteristic Updates
     func startCharacteristicPolling(interval: TimeInterval) {
         stopCharacteristicPolling() // Stop any existing timer
-        log("Start Polling [\(selectedDevice?.name ?? "Unknown Device")]Characteristics.")
+        log("\(selectedDevice?.name ?? "Unknown Device") [Start Polling Characteristics]")
         characteristicPollingTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.pollCharacteristics()
         }
@@ -80,42 +78,34 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
 
     // Stop Polling Characteristic Updates
     func stopCharacteristicPolling() {
-        log("Stop Polling [\(selectedDevice?.name ?? "Unknown Device")] Characteristics.")
+        log("\(selectedDevice?.name ?? "Unknown Device")[Stop Polling Characteristics]")
         characteristicPollingTimer?.invalidate()
         characteristicPollingTimer = nil
     }
-    
+
     // Poll Characteristic Updates for selectedDevice
     func pollCharacteristics() {
-        if self.selectedDevice == nil {
-            self.stopCharacteristicPolling()
-        }
-        for device in connectedDevices {
-            guard let services = device.peripheral?.services else { continue }
-            for service in services {
-                guard let characteristics = service.characteristics else { continue }
-                for characteristic in characteristics {
-                    if characteristic.properties.contains(.read) && selectedDevice?.peripheral == device.peripheral{
-                        device.peripheral?.readValue(for: characteristic)
-                    }
-                }
+        guard let selectedDevice = selectedDevice else { return stopCharacteristicPolling() }
+        connectedDevices.forEach { device in
+            device.peripheral?.services?.forEach { service in
+                service.characteristics?.filter { $0.properties.contains(.read) && device.peripheral == selectedDevice.peripheral }
+                    .forEach { device.peripheral?.readValue(for: $0) }
             }
         }
-        log("Finished reading characteristics for: [\(selectedDevice?.name ?? "Unknown Device")] characteristics.")
+        log("\(selectedDevice.name)[Finished reading characteristics]")
     }
     
     // Retrieve Connected Devices
     func retrieveConnectedDevices() {
         // Retrieve all Devices from connectedDevices array and append to Discovered Devices
-        for device in connectedDevices { // Shows connected device on discoveredDevices refresh.
+        connectedDevices.forEach { device in
             if !discoveredDevices.contains(where: { $0.id == device.id }) {
-                discoveredDevices.append(device) // Add to discoveredDevices
+                discoveredDevices.append(device)
             }
         }
         // Retrieve all Devices not in connectedDevices but connected to central
-        let connectedPeripherals = centralManager.retrieveConnectedPeripherals(withServices: [])
-        for peripheral in connectedPeripherals {
-            let device = BluetoothDevice(peripheral: peripheral, advertisementData:  [:], rssi: 0, status: .connected)
+        centralManager.retrieveConnectedPeripherals(withServices: []).forEach { peripheral in
+            let device = BluetoothDevice(peripheral: peripheral, advertisementData: [:], rssi: 0, status: .connected)
             connectedDevices.append(device)
             connectToDevice(device)
         }
@@ -194,7 +184,7 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     func connectToDevice(_ device: BluetoothDevice) {
         cancelConnectingDevice(device) // Cancel any pending connection
         if let index = discoveredDevices.firstIndex(where: { $0.id == device.id }) {
-            log("Connecting: [\(device.name)]")
+            log("Connecting:[\(device.name)]")
             discoveredDevices[index].status = .connecting
             updateDeviceField(device.peripheral, keyPath: \.status, value: .connecting)
             if let peripheral = device.peripheral {
@@ -252,9 +242,7 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     func updateDeviceStatus(for peripheral: CBPeripheral, status: ConnectionStatus) {
         [discoveredDevices, connectedDevices].forEach { devices in
             // Update Device status in discoveredDevices and connectedDevices
-            if let index = devices.firstIndex(where: { $0.peripheral == peripheral }) {
-                devices[index].status = status
-            }
+            devices.firstIndex(where: { $0.peripheral == peripheral }).map { devices[$0].status = status }
         }
         // Add to connectedDevices if .connected, update discoveredDevice status
         if let discoveredDevice = discoveredDevices.first(where: { $0.peripheral == peripheral }),
@@ -264,9 +252,7 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
 
         }
         // Update selectedDevice status
-        if selectedDevice?.peripheral == peripheral {
-            selectedDevice?.status = status
-        }
+        selectedDevice?.peripheral == peripheral ? (selectedDevice?.status = status) : nil
     }
     
     // MARK: - CoreBluetooth -> Bluetooth State Management
@@ -299,16 +285,14 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         updateDeviceStatus(for: peripheral, status: .connected)
         peripheral.delegate = self // Set the delegate for the connected peripheral
-        connectedDevices.first(where: { $0.peripheral == peripheral }).map { log("Connected: \($0.name)") }
+        connectedDevices.first(where: { $0.peripheral == peripheral }).map { log("Connected:\($0.name)") }
         peripheral.discoverServices(nil) // Start discovering services
     }
     
     // MARK: - CoreBluetooth -> didReadRSSI
     func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
         guard error == nil, let _ = connectedDevices.firstIndex(where: { $0.peripheral == peripheral }) else { return }
-        DispatchQueue.main.async {
-            self.connectedDevices.first(where: { $0.peripheral == peripheral })?.rssi = RSSI
-        }
+        DispatchQueue.main.async {self.connectedDevices.first(where: { $0.peripheral == peripheral })?.rssi = RSSI}
     }
     
     // MARK: - CoreBluetooth -> didWriteValueFor Peripheral Characteristic
@@ -360,7 +344,7 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
         else { return }
 
         descriptorValues["\(characteristic.uuid.uuidString)_\(descriptor.uuid)"] = value
-        log("Descriptor Value Updated: [\(characteristic.uuid)][\(descriptor.uuid)]Value: \(value)")
+        log("Descriptor Value Updated: [\(characteristic.uuid)][\(descriptor.uuid)]Value:\(value)")
     }
 
     // MARK: - CoreBluetooth -> didUpdateValueFor Peripheral Characteristic
@@ -374,18 +358,13 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
             return
         }
 
-        guard
-            let descriptor = characteristic.descriptors?.first(where: { $0.uuid == CBUUID(string: "2901") }),
-            let userDescription = getDescriptorValue(for: characteristic, descriptor: descriptor),
-            let newValue = characteristic.value
-        else {
-            return
-        }
+        guard let descriptor = characteristic.descriptors?.first(where: { $0.uuid == CBUUID(string: "2901") }),
+        let userDescription = getDescriptorValue(for: characteristic, descriptor: descriptor),
+        let newValue = characteristic.value else { return }
 
         if lastCharacteristicValues[characteristic.uuid] != newValue {
             lastCharacteristicValues[characteristic.uuid] = newValue
-            let valueString = newValue.map { String(format: "%02X", $0) }.joined(separator: " ")
-            log("\(peripheral.name ?? "Unknown Device") Characteristic Updated: \(userDescription) [\(characteristic.uuid)] Value: \(valueString)")
+            log("\(peripheral.name ?? "Unknown Device") [Characteristic Updated]\(userDescription)[\(characteristic.uuid)]Value:\(newValue.map { String(format: "%02X", $0) }.joined(separator: " "))")
         }
     }
 
@@ -405,14 +384,8 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
 
     // MARK: - CoreBluetooth -> didDiscoverCharacteristicsFor for Peripheral
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        if let error = error {
-            log("Error discovering characteristics: \(error.localizedDescription)")
-            return
-        }
-        guard let characteristics = service.characteristics else {
-            log("No characteristics found for service: \(service.uuid)")
-            return
-        }
+        if let error = error { return log("Error discovering characteristics: \(error.localizedDescription)") }
+        guard let characteristics = service.characteristics else { return log("No characteristics found for service: \(service.uuid)") }
         log("Discovered Characteristics for Services: [\(service.uuid)] \(peripheral.name ?? "Unknown Device")")
         characteristics.forEach { characteristic in
             log("\(peripheral.name ?? "Unknown Device") Read Characteristic: [\(characteristic.uuid)]Properties: [\(characteristic.properties)]")
@@ -438,7 +411,7 @@ class NetworkManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPe
             let characteristicUUID = characteristic.uuid
             sentValues[characteristicUUID, default: []].append(dataBytes)
             sentValues[characteristicUUID]?.removeFirst(max(0, sentValues[characteristicUUID]!.count - 10))
-            log("Writing data to: \(devices.first { $0.peripheral == peripheral }?.name ?? "Unknown Device") [Characteristic: \(characteristicUUID)]Value: \(dataBytes)")
+            log("Writing data to: \(devices.first { $0.peripheral == peripheral }?.name ?? "Unknown Device") [Characteristic: \(characteristicUUID)]Value:\(dataBytes)")
         }
         saveWriteHistory()
     }

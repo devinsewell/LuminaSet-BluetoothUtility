@@ -78,12 +78,13 @@ class BluetoothDevice: ObservableObject, Identifiable, Equatable {
     
     // Manufacturer name extracted from advertisement data
     var manufacturer: String {
-        if let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data {
-            return manufacturerData.map { String(format: "%02x", $0) }.joined()
+        if let data = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
+           let manufacturerString = String(data: data, encoding: .utf8) {
+            return manufacturerString
         }
         return "Unknown Manufacturer"
     }
-    
+
     // Determine if is apple device
     var isAppleDevice: Bool { // Detect if the device is an Apple device
         name.lowercased().contains("iphone") ||
@@ -106,87 +107,52 @@ class BluetoothDevice: ObservableObject, Identifiable, Equatable {
         let lowercasedManufacturer = manufacturer.lowercased()
 
         if isAppleDevice {
-            if lowercasedName.contains("macbook") {
-                return "laptopcomputer"
-            }else if lowercasedName.contains("mac")  {
-                return "desktopcomputer"
+            switch true {
+            case lowercasedName.contains("macbook"): return "laptopcomputer"
+            case lowercasedName.contains("mac"): return "desktopcomputer"
+            case lowercasedName.contains("ipad"): return "ipad"
+            case lowercasedName.contains("iphone"): return "iphone"
+            case lowercasedName.contains("airpods"), lowercasedName.contains("headphone"): return "headphones"
+            case lowercasedName.contains("watch"): return "applewatch"
+            default: return "applelogo"
             }
-            if lowercasedName.contains("ipad") {
-                return "ipad"
-            }
-            if lowercasedName.contains("iphone") {
-                return "iphone"
-            }
-            if lowercasedName.contains("airpods") || lowercasedName.contains("headphone") {
-                return "headphones"
-            }
-            if lowercasedName.contains("watch") {
-                return "applewatch"
-            }
-            return "applelogo"
         }
-        if lowercasedName.contains("tv") {
-            return "tv"
-        }
+
+        if lowercasedName.contains("tv") { return "tv" }
+
         let laptopBrands = ["surface", "thinkpad", "lenovo", "hp"]
-        if laptopBrands.contains(where: { lowercasedName.contains($0) }) {
-            return "laptopcomputer"
-        }
-        if lowercasedName.contains("bose") {
-            return "wave.3.right"
-        }
+        if laptopBrands.contains(where: { lowercasedName.contains($0) }) { return "laptopcomputer" }
+
         let phoneBrands = ["samsung", "pixel", "oneplus", "xiaomi", "huawei", "oppo", "vivo"]
-        if phoneBrands.contains(where: { lowercasedName.contains($0) }) {
-            return "candybarphone"
+        if phoneBrands.contains(where: { lowercasedName.contains($0) }) { return "candybarphone" }
+
+        switch true {
+        case lowercasedName.contains("bose"): return "wave.3.right"
+        case lowercasedName.contains("headphone"): return "headphones"
+        case lowercasedName.contains("airpod"), lowercasedName.contains("earbud"): return "airpods"
+        case lowercasedName.contains("speaker") || lowercasedName.contains("jbl"): return "speaker"
+        case lowercasedName.contains("keyboard"): return "keyboard"
+        case lowercasedName.contains("mouse"): return "computermouse"
+        case lowercasedName.contains("tablet"): return "ipad"
+        case lowercasedName.contains("laptop"): return "laptopcomputer"
+        case lowercasedName.contains("camera"): return "camera"
+        case lowercasedName.contains("unknown"): return "questionmark.circle"
+        case lowercasedManufacturer.contains("nordic"): return "antenna.radiowaves.left.and.right"
+        case lowercasedManufacturer.contains("bose") || lowercasedName.contains("bose"): return "wave.3.forward"
+        case lowercasedManufacturer.contains("sony") || lowercasedName.contains("sony"): return "music.note"
+        default: break
         }
-        if lowercasedName.contains("headphone") {
-            return "headphones"
+
+        if let batteryLevel = batteryLevel {
+            switch batteryLevel {
+            case ...10: return "battery.0"
+            case 11...50: return "battery.25"
+            case 51...75: return "battery.50"
+            case 76...: return "battery.100"
+            default: break
+            }
         }
-        if lowercasedName.contains("airpod") || lowercasedName.contains("earbud") {
-            return "airpods"
-        }
-        if lowercasedName.contains("speaker") || lowercasedName.contains("JBL") {
-            return "speaker"
-        }
-        if lowercasedName.contains("keyboard") {
-            return "keyboard"
-        }
-        if lowercasedName.contains("mouse") {
-            return "computermouse"
-        }
-        if lowercasedName.contains("tablet") {
-            return "ipad"
-        }
-        if lowercasedName.contains("laptop") {
-            return "laptopcomputer"
-        }
-        if lowercasedName.contains("camera") {
-            return "camera"
-        }
-        if lowercasedName.contains("unknown") {
-            return  "questionmark.circle"
-        }
-        if lowercasedManufacturer.contains("nordic") {
-            return "antenna.radiowaves.left.and.right"
-        }
-        if lowercasedManufacturer.contains("bose") || lowercasedName.contains("bose") {
-            return "wave.3.forward"
-        }
-        if lowercasedManufacturer.contains("sony") || lowercasedName.contains("sony") {
-            return "music.note"
-        }
-        if batteryLevel != nil && batteryLevel! <= 10 {
-            return "battery.0"
-        }
-        if batteryLevel != nil && batteryLevel! > 10 && batteryLevel! <= 50 {
-            return "battery.25"
-        }
-        if batteryLevel != nil && batteryLevel! > 50 && batteryLevel! <= 75 {
-            return "battery.50"
-        }
-        if batteryLevel != nil && batteryLevel! > 75 {
-            return "battery.100"
-        }
+
         return "cpu"
     }
     

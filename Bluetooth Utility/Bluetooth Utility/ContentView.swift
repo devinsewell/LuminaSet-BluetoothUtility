@@ -18,12 +18,7 @@ struct ContentView: View {
                     MainView()
                 } detail: {
                     if let selectedDevice = networkManager.selectedDevice {
-                        DetailView(device: Binding(
-                            get: { selectedDevice },
-                            set: { newValue in
-                                networkManager.selectedDevice = newValue
-                            }
-                        ))
+                        DetailView(device: Binding(get: { selectedDevice }, set: { networkManager.selectedDevice = $0 }))
                     } else {
                         VStack {}
                             .navigationBarHidden(columnVisibility != .detailOnly)
@@ -42,12 +37,10 @@ struct ContentView: View {
                                 networkManager.selectedDevice = newValue
                             }
                         ))
-                        
                         ConsoleLogView(logs: $networkManager.consoleLogs)
                     } else {
                         MainView()
                     }
-                    
                 }
             }
         }
@@ -70,9 +63,9 @@ struct MainView: View {
     }
     // Filter Discovered Devices by RSSI and 'Unknown' Devices
     var filteredDevices: [BluetoothDevice] {
-        networkManager.synchronizeDeviceStatus()
+        networkManager.synchronizeDeviceStatus() // Sychronize discoveredDevices, connectedDevices, and selectedDevice
         return networkManager.discoveredDevices.filter { device in
-            // Apply "Show All" / "Hide Unknown" filter
+            // Apply "Show All" / "Hide Unknown", and Distance filters
             guard showAllDevices || (device.name != "Unknown Device") else { return false }
             switch selectedDistanceFilter { // Apply distance filter
             case .all:
@@ -95,21 +88,20 @@ struct MainView: View {
                 Text("\(filteredDevices.count) Device\(filteredDevices.count == 1 ? "" : "s") \nNearby")
                     .font(.largeTitle)
                     .bold()
-                if selectedDistanceFilter != .all || !showAllDevices{
+                if selectedDistanceFilter != .all || !showAllDevices {
                     // If Scan mode(s) selected show selected options
                     HStack {
-                        Text("Scan Mode:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(" \(selectedDistanceFilter.rawValue.capitalized)\(selectedDistanceFilter != .all && !showAllDevices ? "\n'Unknown' Hidden" : (showAllDevices ? "" : "'Unknown' Hidden"))")
+                        Text("Scan Mode:").font(.caption).foregroundColor(.secondary)
+                        Text("\(selectedDistanceFilter.rawValue.capitalized)\(showAllDevices ? "" : "'Unknown' Hidden")")
                             .foregroundColor(.secondary)
                             .font(.system(.caption, design: .monospaced))
                             .padding(8)
-                            .multilineTextAlignment(.center) // Aligns text content in the center
+                            .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
                             .background(
-                                // UI: Container for selected Scan Mode options
-                                RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground)).stroke(Color.blue, lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color(.secondarySystemBackground))
+                                    .stroke(Color.blue, lineWidth: 1)
                             )
                     }
                 }
@@ -119,16 +111,10 @@ struct MainView: View {
                     Text("Scan nearby devices").foregroundColor(.secondary)
                     Spacer()
                     Toggle("Scanning", isOn: $networkManager.bluetoothScanning)
-                        .tint(.blue)
+                    .tint(.blue)
                     .labelsHidden() // Hides the label for compact layout
                     .onChange(of: networkManager.bluetoothScanning) { _, newValue in
-                        DispatchQueue.main.async {
-                            if newValue {
-                                networkManager.startBluetoothScan()
-                            } else {
-                                networkManager.stopBluetoothScan()
-                            }
-                        }
+                        DispatchQueue.main.async { newValue ? networkManager.startBluetoothScan() : networkManager.stopBluetoothScan() }
                     }
 
                 }.padding(.bottom)
@@ -169,10 +155,7 @@ struct MainView: View {
                         ConnectedDeviceCell(device: device) // Connected Device Item
                     }
                     .onDelete { indexSet in
-                        indexSet.forEach { index in
-                            let device = networkManager.connectedDevices[index]
-                            networkManager.disconnectDevice(device)
-                        }
+                        indexSet.forEach { networkManager.disconnectDevice(networkManager.connectedDevices[$0]) }
                     }
                 }
                 .listStyle(PlainListStyle())
@@ -198,10 +181,8 @@ struct MainView: View {
                     Text("Scan Options:").font(.headline).foregroundColor(.secondary)
                     // Visibility Toggle (Hide Unknowns)
                     Picker("Visibility", selection: $showAllDevices) {
-                        Label("Show All", systemImage: showAllDevices ? "checkmark.circle.fill" : "circle")
-                            .tag(true)
-                        Label("Hide Unknown", systemImage: !showAllDevices ? "checkmark.circle.fill" : "circle")
-                            .tag(false)
+                        Label("Show All", systemImage: showAllDevices ? "checkmark.circle.fill" : "circle").tag(true)
+                        Label("Hide Unknown", systemImage: !showAllDevices ? "checkmark.circle.fill" : "circle").tag(false)
                     }
                     .pickerStyle(.inline)
                     Divider()
@@ -209,8 +190,7 @@ struct MainView: View {
                     // Distance Filter
                     Picker("Distance", selection: $selectedDistanceFilter) {
                         ForEach(DistanceFilter.allCases, id: \.self) { filter in
-                            Label(filter.rawValue, systemImage: selectedDistanceFilter == filter ? "checkmark.circle.fill" : "circle")
-                                .tag(filter)
+                            Label(filter.rawValue, systemImage: selectedDistanceFilter == filter ? "checkmark.circle.fill" : "circle").tag(filter)
                         }
                     }
                     .pickerStyle(.inline)
@@ -229,43 +209,30 @@ struct ConnectedDeviceCell: View {
     let device: BluetoothDevice
     var body: some View {
         HStack {
-            if networkManager.selectedDevice == device {
-                // Show icon if Device is selected
-                Image(systemName: "slider.horizontal.3").foregroundColor(.orange)
-            }
-            if device.status != .connected {
-                // Show icon if Device is not .connected
-                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(device.status == .connecting ? .blue : .secondary)
-            }
-            Image(systemName: device.determineIcon())
-                .font(.title2)
-                .foregroundColor(.blue)
+            // Show "control" symbol if Device is selected
+            Image(systemName: "slider.horizontal.3").foregroundColor(.orange).opacity(networkManager.selectedDevice == device ? 1 : 0)
 
+            // Show "!" symbol if Device is not .connected
+            Image(systemName: "exclamationmark.triangle.fill").foregroundColor(device.status == .connecting ? .blue : .secondary).opacity(device.status != .connected ? 1 : 0)
+
+            // Device Type Icon
+            Image(systemName: device.determineIcon()).font(.title2).foregroundColor(.blue)
+
+            // Device Info Text
             VStack(alignment: .leading) {
                 Text(device.name).font(.body).bold()
                 Text(device.manufacturer).font(.caption).foregroundColor(.secondary)
                 Text(device.model).font(.caption2).foregroundColor(.secondary)
             }
             Spacer()
+            // RSSI value Text
             VStack {
                 Text(device.rssi.intValue != 0 ? "\(device.rssi)dB" : "N/A").font(.caption)
-                if device.hasBatteryLevelCharacteristic() {
-                    if let batteryLevel = device.batteryLevel {
-                        Image(systemName: batteryLevel <= 10 ? "battery.0" :
-                                batteryLevel <= 50 ? "battery.25" :
-                                batteryLevel <= 75 ? "battery.50" :
-                                "battery.100")
-                            .foregroundColor(device.status == .disconnected ? .gray : .green)
-                    }
-                }
             }
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture {
-            // Set selectedDevice on Connected Device List cell tap
-            networkManager.selectedDevice = device
-        }
+        .onTapGesture { networkManager.selectedDevice = device } // Set selectedDevice on Connected Device List cell tap
     }
 }
 
@@ -283,12 +250,12 @@ struct DiscoveredDeviceTile: View {
                         Image(systemName: device.determineIcon())
                             .font(.largeTitle)
                             .foregroundColor(device.status == .connected ? .white : .blue)
-                            .padding(.top, 8)
+                            .padding(.top, 8) // UI: Adjusted for visual balance
                         Text(device.name)
                             .font(.caption)
                             .foregroundColor(device.status == .connected ? .white : .blue)
                             .multilineTextAlignment(.center)
-                            .padding(.top, 2)
+                            .padding(.top, 2) // UI: Adjusted for visual balance
                     }
                     .padding()
                 )
@@ -299,9 +266,7 @@ struct DiscoveredDeviceTile: View {
                         networkManager.cancelConnectingDevice(device)
                     case .disconnected:
                         networkManager.connectToDevice(device)
-                        if networkManager.selectedDevice == nil {
-                            networkManager.selectedDevice = device
-                        }
+                        networkManager.selectedDevice = networkManager.selectedDevice ?? device
                     default:
                         networkManager.selectedDevice = device
                     }
@@ -311,9 +276,7 @@ struct DiscoveredDeviceTile: View {
                 HStack {
                     if device.status == .connecting {
                         // If Connecting show Activity/Progress Indicator
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .scaleEffect(0.7)
+                        ProgressView().progressViewStyle(CircularProgressViewStyle()).scaleEffect(0.7)
                         Spacer()
                     } else {
                         // Display Antenna icon or Control icon if device is selected
@@ -371,8 +334,7 @@ struct DetailView: View {
             }
             VStack(alignment: .center, spacing: 16) {
                 HStack { // Live Updates Toggle and Polling Interval
-                    Image(systemName: "waveform.path.ecg")
-                        .foregroundColor(.orange)
+                    Image(systemName: "waveform.path.ecg").foregroundColor(.orange)
                     Toggle("Live Updates", isOn: $networkManager.liveUpdatesEnabled)
                         .onChange(of: networkManager.liveUpdatesEnabled) { _, newValue in
                             handleLiveUpdates(enabled: newValue)
@@ -473,9 +435,9 @@ struct DetailView: View {
                     }
                 }) {
                     // Only show if .connected or .disconnected
-                    if device.status == .connected || device.status == .disconnected {
-                        // Show 'Disconnect' if .connected, 'Connect' if .disconnected
-                        Text(device.status == .connected ? "Disconnect" : "Connect").foregroundColor(device.status == .connected ? .red : .green)
+                    if [.connected, .disconnected].contains(device.status) {
+                        Text(device.status == .connected ? "Disconnect" : "Connect")
+                            .foregroundColor(device.status == .connected ? .red : .green)
                     }
                 }
             }
@@ -540,9 +502,8 @@ struct DetailView: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .onAppear {
-                                if !networkManager.isDescriptorRead(descriptor: userDescriptionDescriptor, characteristic: characteristic) {
-                                   networkManager.readDescriptorValue(descriptor: userDescriptionDescriptor)
-                               }
+                                guard !networkManager.isDescriptorRead(descriptor: userDescriptionDescriptor, characteristic: characteristic) else { return }
+                                networkManager.readDescriptorValue(descriptor: userDescriptionDescriptor)
                             }
                     }
                 }
@@ -617,42 +578,33 @@ struct DetailView: View {
                                 let sanitizedValue = inputModes[characteristic.uuid] == .hex
                                     ? newValue.filter { "0123456789ABCDEFabcdef".contains($0) } // Allow only valid hex characters
                                     : newValue // No sanitization for non-hex mode
-                                if networkManager.textInputs[characteristic.uuid] != sanitizedValue {
-                                    networkManager.textInputs[characteristic.uuid] = sanitizedValue
-                                }
+                                networkManager.textInputs[characteristic.uuid] = sanitizedValue != networkManager.textInputs[characteristic.uuid] ? sanitizedValue : networkManager.textInputs[characteristic.uuid]
+
                             }
                         ))
+                        .lineLimit(nil) // Allow unlimited Characteristic Input lines
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.5), lineWidth: 1)) // Border stroke for input textField
+                        .font(.system(.footnote, design: .monospaced))
+                        .keyboardType(inputModes[characteristic.uuid] == .hex ? .asciiCapable : .numberPad)
+                        .onSubmit {processInput(for: characteristic, devices: [device])}
                         .onAppear {
                             // Set default mode to .hex if not already set
-                            if inputModes[characteristic.uuid] == nil {
-                                inputModes[characteristic.uuid] = .hex
-                            }
+                            inputModes[characteristic.uuid] = inputModes[characteristic.uuid] ?? .hex
                         }
                         .onChange(of: networkManager.textInputs[characteristic.uuid] ?? "") { previousInput, currentInput in
                             guard inputModes[characteristic.uuid] == .hex else { return }
                             let sanitizedInput = currentInput.replacingOccurrences(of: " ", with: "") // Remove spaces
                             let formattedInput = sanitizedInput.chunked(by: 2).joined(separator: " ") // Format into chunks
-                            if networkManager.textInputs[characteristic.uuid] != formattedInput {
-                                networkManager.textInputs[characteristic.uuid] = formattedInput // Save the formatted value
-                            }
+                            networkManager.textInputs[characteristic.uuid] = (networkManager.textInputs[characteristic.uuid] != formattedInput) ? formattedInput : networkManager.textInputs[characteristic.uuid]
+
                         }
-                        .lineLimit(nil) // Allow unlimited Characteristic Input lines
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.5), lineWidth: 1) // Border stroke for input textField
-                        )
-                        .font(.system(.footnote, design: .monospaced))
-                        .keyboardType(inputModes[characteristic.uuid] == .hex ? .asciiCapable : .numberPad)
-                        .onSubmit {
-                            processInput(for: characteristic, devices: [device])
-                        }
+                        
                         // Clear Characteristic value Input button
                         if !(networkManager.textInputs[characteristic.uuid]?.isEmpty ?? true) {
                             Button(action: {
                                 networkManager.textInputs[characteristic.uuid] = ""
                             }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
-                                    .padding(8)
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary).padding(8)
                             }
                         }
                         Button(action: {
@@ -660,8 +612,7 @@ struct DetailView: View {
                             UIApplication.shared.sendAction(#selector(UIView.endEditing), to: nil, from: nil, for: nil)
                             processInput(for: characteristic, devices: [device])
                         }) {
-                            Image(systemName: "paperplane.fill")
-                                .foregroundColor(.white)
+                            Image(systemName: "paperplane.fill").foregroundColor(.white)
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -669,9 +620,7 @@ struct DetailView: View {
                     if let sentValues = networkManager.sentValues[characteristic.uuid], !sentValues.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text("Write History:")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                Text("Write History:").font(.caption).foregroundColor(.secondary)
                                 Spacer()
                                    Button(action: { // Clear Write History button
                                        showAlert(
@@ -714,16 +663,14 @@ struct DetailView: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
-            networkManager.loadWriteHistory() // Load / refresh history
+            networkManager.loadCharacteristicWriteHistory() // Load / refresh history
         }
     }
 
     // Device Advertising Stats Helper
     private func deviceStat(icon: String? = nil, label: String, value: String) -> some View {
         VStack {
-            if let icon = icon {
-                Image(systemName: icon).foregroundColor(.blue)
-            }
+            if let icon = icon { Image(systemName: icon).foregroundColor(.blue) }
             Text(label).font(.caption).foregroundColor(.secondary)
             Text(value).font(.subheadline).bold()
         }
@@ -774,11 +721,7 @@ enum InputMode: String {
             while index < sanitized.endIndex {
                 let nextIndex = sanitized.index(index, offsetBy: 2, limitedBy: sanitized.endIndex) ?? sanitized.endIndex
                 let byteString = String(sanitized[index..<nextIndex])
-                if let byte = UInt8(byteString, radix: 16) {
-                    data.append(byte)
-                } else {
-                    return nil
-                }
+                guard let byte = UInt8(byteString, radix: 16) else { return nil }; data.append(byte)
                 index = nextIndex
             }
             return data

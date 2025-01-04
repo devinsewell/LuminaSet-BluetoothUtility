@@ -219,32 +219,11 @@ struct ConsoleLogView: View {
             ("^[-]+$", .orange),                    // Matches standalone lines of "-"
             ("^[_]+$", .cyan),                    // Matches standalone lines of "_"
             ("Device Disconnected:", .red),               // Matches "Disconnected:"
-            ("Max reconnection attempts reached:", .orange),
             ("Connected:", .green),
+            ("Successfully Wrote to Characteristic:", .green),
             ("Bluetooth is powered on.", .cyan),
-            ("Bluetooth is unavailable. Clearing devices.", .orange),
-            ("Discovered Services:", .green),
-            ("Discovered:", .blue),
-            ("Retrieved Peripheral:", .blue),
-            ("Connecting:", .cyan),
-            ("Service:", .cyan),
-            ("Descriptor Value Updated:", .blue),
-            ("Discovered Descriptors for:", .green),
-            ("Error discovering descriptors for:", .red),
-            ("Read Characteristic:", .cyan),
-            ("Characteristic Updated:", .blue),
-            ("Subscribing to notifications for:", .cyan),
-            ("Reading initial value for:", .cyan),
-            ("Error reading characteristic:", .red),
             ("Starting Bluetooth scan...", .green),
             ("Stopping Bluetooth scan...", .red),
-            ("Error Writing to Device:", .red),
-            ("Writing data to:", .blue),
-            ("Successfully Wrote to Characteristic:", .green),
-            ("Finished reading characteristics for:", .blue),
-            ("Value:", .orange),
-            ("Properties:", .cyan),
-            ("Discovered Characteristics for Services:", .green),
         ]
         
         // Reassemble formatted Console Log Item
