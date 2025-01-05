@@ -124,16 +124,12 @@ struct ConsoleLogView: View {
     
     // Export and Share Console Log
     private func shareLogs() {
-        guard !networkManager.consoleLogs.isEmpty else {
-            print("No logs available to share.")
-            return
-        }
+        guard !networkManager.consoleLogs.isEmpty else { return print("No logs available to share.") }
 
         // Combine logs into a single string
         let logsText = "LuminaSet -> Console Log Output:\n ------------------------------- \n\n" + networkManager.consoleLogs.joined(separator: "\n\n")
-        // Add date and time to the filename
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyyMMdd_HHmmss" // Example: 20240102_142530
+        // Add date and time to the filename -> Example: 20240102_142530
+        let dateFormatter: DateFormatter = { let df = DateFormatter(); df.dateFormat = "yyyyMMdd_HHmmss"; return df }()
         let timestamp = dateFormatter.string(from: Date())
         let tempFileURL = FileManager.default.temporaryDirectory.appendingPathComponent("LuminaSetBLE_\(timestamp).txt")
 
