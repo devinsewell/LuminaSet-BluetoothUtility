@@ -166,7 +166,6 @@ struct MainView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                //ToolbarItem(placement: UIDevice.current.userInterfaceIdiom == .pad ? .principal : .navigationBarLeading) {
                 Image("LSLogo") // LuminaSet Logo
                     .resizable()
                     .renderingMode(.template)
